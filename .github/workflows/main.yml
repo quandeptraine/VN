@@ -12,10 +12,15 @@ jobs:
     runs-on: macos-15
 
     steps:
+
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Prepare Xcode source tree
+      # =====================================================
+      # PREPARE
+      # =====================================================
+
+      - name: Prepare FarmViet
         shell: bash
         run: |
           set -e
@@ -24,141 +29,420 @@ jobs:
           echo "PREPARING FARMVIET"
           echo "========================================"
 
-          test -d FarmViet.xcodeproj
-          test -f FarmViet.xcodeproj/project.pbxproj
+          echo ""
+          echo "Checking Xcode project..."
 
-          rm -rf FarmViet
-          mkdir -p FarmViet
+          test -d "FarmViet.xcodeproj"
+          test -f "FarmViet.xcodeproj/project.pbxproj"
 
-          cp -f FarmVietApp.swift FarmViet/
-          cp -f FarmView.swift FarmViet/
-          cp -f GameScene.swift FarmViet/
-          cp -f Info.plist FarmViet/
+          echo "Xcode project OK"
 
-          # Copy every supplied image into the flat resource directory
-          # because the generated Xcode project references filenames directly.
-          find . -maxdepth 1 -type f \\
-            \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.gif' \) \\
-            -exec cp -f {} FarmViet/ \;
+          rm -rf "FarmViet"
+          mkdir -p "FarmViet"
 
-          if [ -d Resources ]; then
-            find Resources -type f \\
-              \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.gif' \) \\
-              -exec cp -f {} FarmViet/ \;
-          fi
+          # -------------------------------------------------
+          # Swift files
+          # -------------------------------------------------
 
-          if [ -d Assets ]; then
-            find Assets -type f \\
-              \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.gif' \) \\
-              -exec cp -f {} FarmViet/ \;
-          fi
+          cp -f "FarmVietApp.swift" "FarmViet/"
+          cp -f "FarmView.swift" "FarmViet/"
+          cp -f "GameScene.swift" "FarmViet/"
+          cp -f "Info.plist" "FarmViet/"
 
-          # Known aliases used by the Xcode project.
-          if [ ! -f FarmViet/WaterTile.png ] && [ -f FarmViet/Water.png ]; then
-            cp -f FarmViet/Water.png FarmViet/WaterTile.png
-          fi
+          echo "Swift files copied"
 
-          if [ ! -f FarmViet/PierTile.png ] && [ -f FarmViet/Pier_Tiles.png ]; then
-            cp -f FarmViet/Pier_Tiles.png FarmViet/PierTile.png
-          fi
+          # -------------------------------------------------
+          # Copy root image files
+          # -------------------------------------------------
 
-          # The animation project references numbered frames. The supplied
-          # asset pack contains sprite sheets/base images, so make safe aliases
-          # when an individual numbered frame is absent.
-          for BASE in \\
-            Fisherman_idle \\
-            Fisherman_walk \\
-            Fisherman_row \\
-            Fisherman_fish \\
-            Fisherman_hook
-          do
-            if [ -f "FarmViet/${BASE}.png" ]; then
-              for N in 0 1 2 3 4 5; do
-                if [ ! -f "FarmViet/${BASE}_${N}.png" ]; then
-                  cp -f "FarmViet/${BASE}.png" "FarmViet/${BASE}_${N}.png"
-                fi
-              done
+          python3 <<'PY'
+          import os
+          import shutil
+
+          destination = "FarmViet"
+
+          extensions = {
+              ".png",
+              ".jpg",
+              ".jpeg",
+              ".gif",
+              ".wav",
+              ".mp3",
+              ".m4a"
+          }
+
+          copied = 0
+
+          for name in os.listdir("."):
+
+              path = os.path.join(".", name)
+
+              if not os.path.isfile(path):
+                  continue
+
+              ext = os.path.splitext(name)[1].lower()
+
+              if ext not in extensions:
+                  continue
+
+              target = os.path.join(destination, name)
+
+              shutil.copy2(path, target)
+
+              print("ROOT ASSET:", name)
+
+              copied += 1
+
+          print("Root assets copied:", copied)
+          PY
+
+          # -------------------------------------------------
+          # Copy Resources and Assets
+          # -------------------------------------------------
+
+          python3 <<'PY'
+          import os
+          import shutil
+
+          destination = "FarmViet"
+
+          extensions = {
+              ".png",
+              ".jpg",
+              ".jpeg",
+              ".gif",
+              ".wav",
+              ".mp3",
+              ".m4a"
+          }
+
+          for source_root in ["Resources", "Assets"]:
+
+              if not os.path.isdir(source_root):
+                  continue
+
+              for root, dirs, files in os.walk(source_root):
+
+                  for name in files:
+
+                      ext = os.path.splitext(name)[1].lower()
+
+                      if ext not in extensions:
+                          continue
+
+                      source = os.path.join(root, name)
+                      target = os.path.join(destination, name)
+
+                      # Don't overwrite a root asset with another copy.
+                      if os.path.exists(target):
+                          print(
+                              "SKIP EXISTING:",
+                              name
+                          )
+                          continue
+
+                      shutil.copy2(source, target)
+
+                      print(
+                          "COPIED:",
+                          source,
+                          "->",
+                          target
+                      )
+
+          PY
+
+          # =================================================
+          # KNOWN ASSET ALIASES
+          # =================================================
+
+          echo ""
+          echo "========================================"
+          echo "CREATING ASSET ALIASES"
+          echo "========================================"
+
+          # WaterTile
+          if [ ! -f "FarmViet/WaterTile.png" ]; then
+
+            if [ -f "FarmViet/Water.png" ]; then
+
+              cp -f \
+                "FarmViet/Water.png" \
+                "FarmViet/WaterTile.png"
+
+              echo "Created WaterTile.png"
+
             fi
-          done
+
+          fi
+
+          # PierTile
+          if [ ! -f "FarmViet/PierTile.png" ]; then
+
+            if [ -f "FarmViet/Pier_Tiles.png" ]; then
+
+              cp -f \
+                "FarmViet/Pier_Tiles.png" \
+                "FarmViet/PierTile.png"
+
+              echo "Created PierTile.png"
+
+            fi
+
+          fi
+
+          # =================================================
+          # FISHERMAN FRAME ALIASES
+          # =================================================
+
+          python3 <<'PY'
+          import os
+          import shutil
+
+          directory = "FarmViet"
+
+          bases = [
+              "Fisherman_idle",
+              "Fisherman_walk",
+              "Fisherman_row",
+              "Fisherman_fish",
+              "Fisherman_hook"
+          ]
+
+          for base in bases:
+
+              original = os.path.join(
+                  directory,
+                  base + ".png"
+              )
+
+              if not os.path.isfile(original):
+                  continue
+
+              for number in range(0, 21):
+
+                  target = os.path.join(
+                      directory,
+                      f"{base}_{number}.png"
+                  )
+
+                  if os.path.isfile(target):
+                      continue
+
+                  shutil.copy2(
+                      original,
+                      target
+                  )
+
+                  print(
+                      "FRAME ALIAS:",
+                      os.path.basename(target)
+                  )
+
+          PY
+
+          # =================================================
+          # CHECK FILES
+          # =================================================
 
           echo ""
-          echo "Required animation files:"
-          ls -1 FarmViet/Fisherman_* 2>/dev/null | sort || true
+          echo "========================================"
+          echo "FARMVIET FILE CHECK"
+          echo "========================================"
+
+          test -f "FarmViet/FarmVietApp.swift" || true
+          test -f "FarmViet/FarmView.swift" || true
+          test -f "FarmViet/GameScene.swift" || true
+          test -f "FarmViet/Info.plist"
 
           echo ""
-          echo "Required tile files:"
-          ls -l FarmViet/WaterTile.png FarmViet/PierTile.png
+          echo "Water:"
+          ls -lh "FarmViet/Water.png" 2>/dev/null || true
+          ls -lh "FarmViet/WaterTile.png" 2>/dev/null || true
+
+          echo ""
+          echo "Pier:"
+          ls -lh "FarmViet/Pier_Tiles.png" 2>/dev/null || true
+          ls -lh "FarmViet/PierTile.png" 2>/dev/null || true
+
+          echo ""
+          echo "Fisherman:"
+          ls -1 "FarmViet"/Fisherman_*.png 2>/dev/null | sort || true
+
+          echo ""
+          echo "Total files:"
+
+          python3 - <<'PY'
+          import os
+
+          files = [
+              x for x in os.listdir("FarmViet")
+              if os.path.isfile(
+                  os.path.join("FarmViet", x)
+              )
+          ]
+
+          print(len(files))
+          PY
+
+          echo ""
+          echo "PREPARE COMPLETE"
+
+      # =====================================================
+      # SELECT XCODE
+      # =====================================================
 
       - name: Select Xcode
         shell: bash
         run: |
           set -e
-          sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
+
+          echo "========================================"
+          echo "XCODE"
+          echo "========================================"
+
+          sudo xcode-select \
+            -s /Applications/Xcode.app/Contents/Developer
+
           xcodebuild -version
+
+          echo ""
+
           xcrun --sdk iphoneos --show-sdk-path
 
-      - name: Inspect project
+      # =====================================================
+      # CHECK PROJECT
+      # =====================================================
+
+      - name: Inspect Xcode project
         shell: bash
         run: |
           set -e
-          xcodebuild -project FarmViet.xcodeproj -list
+
+          echo "========================================"
+          echo "XCODE PROJECT"
+          echo "========================================"
+
+          xcodebuild \
+            -project "FarmViet.xcodeproj" \
+            -list
+
+      # =====================================================
+      # BUILD
+      # =====================================================
 
       - name: Build Farm Viet
         shell: bash
         run: |
           set -o pipefail
 
-          rm -rf build
-          mkdir -p build
+          echo "========================================"
+          echo "BUILD FARM VIET"
+          echo "========================================"
 
-          xcodebuild \\
-            -project FarmViet.xcodeproj \\
-            -scheme FarmViet \\
-            -configuration Release \\
-            -sdk iphoneos \\
-            -derivedDataPath build/DerivedData \\
-            SDKROOT=iphoneos \\
-            SUPPORTED_PLATFORMS=iphoneos \\
-            TARGETED_DEVICE_FAMILY="1,2" \\
-            IPHONEOS_DEPLOYMENT_TARGET=16.0 \\
-            SUPPORTS_MACCATALYST=NO \\
-            CODE_SIGNING_ALLOWED=NO \\
-            CODE_SIGNING_REQUIRED=NO \\
-            CODE_SIGN_IDENTITY="" \\
-            clean build \\
-            2>&1 | tee build/xcodebuild.log
+          rm -rf "build"
+          mkdir -p "build"
+
+          xcodebuild -project "FarmViet.xcodeproj" -scheme "FarmViet" -configuration "Release" -sdk "iphoneos" -derivedDataPath "build/DerivedData" SDKROOT=iphoneos SUPPORTED_PLATFORMS=iphoneos TARGETED_DEVICE_FAMILY="1,2" IPHONEOS_DEPLOYMENT_TARGET=16.0 SUPPORTS_MACCATALYST=NO CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" clean build 2>&1 | tee "build/xcodebuild.log"
+
+      # =====================================================
+      # SHOW ERRORS
+      # =====================================================
 
       - name: Show build errors
         if: failure()
         shell: bash
         run: |
+          echo ""
           echo "========================================"
-          echo "BUILD ERRORS"
+          echo "BUILD FAILED"
           echo "========================================"
-          if [ -f build/xcodebuild.log ]; then
-            grep -n -E 'error:|fatal error|BUILD FAILED' build/xcodebuild.log || true
+
+          if [ -f "build/xcodebuild.log" ]; then
+
             echo ""
-            echo "Last 250 lines:"
-            tail -n 250 build/xcodebuild.log
+            echo "ERRORS:"
+            echo "----------------------------------------"
+
+            grep -n -E "error:|fatal error|BUILD FAILED" "build/xcodebuild.log" || true
+
+            echo ""
+            echo "LAST 250 LINES:"
+            echo "----------------------------------------"
+
+            tail -n 250 "build/xcodebuild.log"
+
           fi
+
+      # =====================================================
+      # FIND APP
+      # =====================================================
+
+      - name: Find FarmViet app
+        shell: bash
+        run: |
+          set -e
+
+          echo "========================================"
+          echo "FIND FARMVIET.APP"
+          echo "========================================"
+
+          APP=$(find "build/DerivedData" -type d -name "FarmViet.app" | head -n 1)
+
+          if [ -z "$APP" ]; then
+            echo "FarmViet.app NOT FOUND"
+            exit 1
+          fi
+
+          echo "APP:"
+          echo "$APP"
+
+      # =====================================================
+      # CREATE IPA
+      # =====================================================
 
       - name: Create unsigned IPA
         shell: bash
         run: |
           set -e
 
-          APP=$(find build/DerivedData -type d -name 'FarmViet.app' | head -n 1)
-          test -n "$APP"
+          echo "========================================"
+          echo "CREATE UNSIGNED IPA"
+          echo "========================================"
 
-          rm -rf build/Payload
-          mkdir -p build/Payload
-          cp -R "$APP" build/Payload/FarmViet.app
+          APP=$(find "build/DerivedData" -type d -name "FarmViet.app" | head -n 1)
 
-          cd build
-          rm -f FarmViet-V12-unsigned.ipa
-          zip -r FarmViet-V12-unsigned.ipa Payload
+          if [ -z "$APP" ]; then
+            echo "ERROR: FarmViet.app not found"
+            exit 1
+          fi
 
-          ls -lh FarmViet-V12-unsigned.ipa
+          rm -rf "build/Payload"
+
+          mkdir -p "build/Payload"
+
+          cp -R \
+            "$APP" \
+            "build/Payload/FarmViet.app"
+
+          cd "build"
+
+          rm -f "FarmViet-V12-unsigned.ipa"
+
+          zip -r \
+            "FarmViet-V12-unsigned.ipa" \
+            "Payload"
+
+          echo ""
+          echo "========================================"
+          echo "IPA CREATED"
+          echo "========================================"
+
+          ls -lh "FarmViet-V12-unsigned.ipa"
+
+      # =====================================================
+      # UPLOAD IPA
+      # =====================================================
 
       - name: Upload unsigned IPA
         uses: actions/upload-artifact@v4
@@ -166,6 +450,10 @@ jobs:
           name: FarmViet-V12-unsigned-IPA
           path: build/FarmViet-V12-unsigned.ipa
           if-no-files-found: error
+
+      # =====================================================
+      # UPLOAD LOG
+      # =====================================================
 
       - name: Upload build log
         if: always()
